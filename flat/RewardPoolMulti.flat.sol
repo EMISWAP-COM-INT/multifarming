@@ -1781,8 +1781,8 @@ contract RewardPoolMulti is LPTokenWrapper, IRewardDistributionRecipient, Reentr
     // TODO: т.к. общая ставка это ESW и множество LP то для простоты вывод делается только польностью
     function withdrawAll() internal nonReentrant updateReward(msg.sender) {
         require(balanceOfStakeToken(msg.sender) > 0, "no balance");
-        super.withdraw();
         emit Withdrawn(msg.sender, balanceOfStakeToken(msg.sender));
+        super.withdraw();
     }
 
     function exit() external {
