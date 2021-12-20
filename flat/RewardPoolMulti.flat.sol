@@ -1657,8 +1657,13 @@ contract LPTokenWrapper {
         _totalSupply = _totalSupply.sub(amount);
 
         for (uint256 index = 0; index < stakeTokens.length; index++) {
-            IERC20Upgradeable(stakeTokens[index]).safeTransfer(msg.sender, _balances[msg.sender][stakeTokens[index]]);
-            _balances[msg.sender][stakeTokens[index]] = 0;
+            if (_balances[msg.sender][stakeTokens[index]] > 0) {
+                IERC20Upgradeable(stakeTokens[index]).safeTransfer(
+                    msg.sender,
+                    _balances[msg.sender][stakeTokens[index]]
+                );
+                _balances[msg.sender][stakeTokens[index]] = 0;
+            }
         }
 
         // reset exit date limits
