@@ -1,12 +1,16 @@
 const { expect, assert } = require("chai");
 const { constants, utils, BigNumber } = require("ethers");
 const { ethers, network } = require("hardhat");
-const { tokens, tokensDec } = require("../utils/utils");
+const { tokens, tokensDec, getBlockTime, timeShift } = require("../utils/utils");
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+const FARMING_DURATION = 90 * 24 * 60 * 60;
+const FARMING_EXIT_TIMOUT = 30 * 24 * 60 * 60;
+const ONE_DAY = 1 * 24 * 60 * 60;
+
 describe("Farming", function () {
-    let MockLP, esw, usdt, weth, RewardPoolMulti, emiRouter, emiFactory, routes;
+    let MockLP, esw, usdt, weth, RewardPoolMulti, emiRouter, emiFactory, routes, time;
     before(async () => {
         [deployer, owner, Alice, Bob, Clarc] = await ethers.getSigners();
     });
@@ -170,8 +174,8 @@ describe("Farming", function () {
             owner.address,
             emiFactory.address,
             usdt.address,
-            90 * 24 * 60 * 60,
-            30 * 24 * 60 * 60,
+            FARMING_DURATION,
+            FARMING_EXIT_TIMOUT,
         ]);
         await RewardPoolMulti.deployed();
 
@@ -398,5 +402,43 @@ describe("Farming", function () {
         await expect(
             RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "100000000", tokens(1))
         ).to.be.revertedWith("not enough stake token amount");
+    });
+
+    it("stake, earn, stop farming", async () => {
+        let pools = await emiRouter.getPoolDataList([wbtc.address, wbtc.address], [uni.address, weth.address]);
+        let wbtc_weth_pool = await lpInstance.attach(pools[1].pool);
+
+        // owner send by 1_000_000 to Alice
+        await esw.transfer(Alice.address, tokens(1_000_000));
+        await esw.connect(Alice).approve(RewardPoolMulti.address, tokens(100));
+        // prepare wbtc_weth_pool LP for staking
+        await wbtc_weth_pool.transfer(Alice.address, tokens("1"));
+        await wbtc_weth_pool.connect(Alice).approve(RewardPoolMulti.address, tokens("1"));
+        await RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "1000000000", tokens(1));
+
+        let earned = 0;
+
+        for (const i of Array(30).keys()) {
+            time = await getBlockTime(ethers);
+            await timeShift(time + ONE_DAY * 1);
+
+            // stop farming on some time and remember earnings
+            if (i == 15) {
+                await RewardPoolMulti.connect(owner).stopFarming();
+                earned = (await RewardPoolMulti.earned(Alice.address)).add(
+                    await RewardPoolMulti.balanceOfStakeToken(Alice.address)
+                );
+            }
+        }
+
+        // exit and get earned rewards
+        let eswAliceBeforeExit = await esw.balanceOf(Alice.address);
+        await RewardPoolMulti.connect(Alice).exit();
+        let eswAliceAfterExit = await esw.balanceOf(Alice.address);
+
+        let receivedRewards = eswAliceAfterExit.sub(eswAliceBeforeExit);
+
+        // earned rewards must be equal to earning at stop farming time
+        expect(receivedRewards).to.be.equal(earned);
     });
 });

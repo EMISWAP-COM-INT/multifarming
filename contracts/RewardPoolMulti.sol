@@ -155,6 +155,11 @@ contract RewardPoolMulti is LPTokenWrapper, IRewardDistributionRecipient, Reentr
         periodStop = _periodStop;
     }
 
+    function stopFarming() external onlyOwner {
+        // stop staking and rewarding by current date/time
+        periodFinish = block.timestamp;
+    }
+
     /**
      * @dev get staked values nominated in stable coin for the wallet and for all
      * @param wallet wallet for getting staked value
