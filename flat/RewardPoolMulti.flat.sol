@@ -1,40 +1,5 @@
 // Sources flattened with hardhat v2.6.8 https://hardhat.org
 
-// File @openzeppelin/contracts/math/Math.sol@v3.4.2
-
-// SPDX-License-Identifier: MIT
-
-pragma solidity >=0.6.0 <0.8.0;
-
-/**
- * @dev Standard math utilities missing in the Solidity language.
- */
-library Math {
-    /**
-     * @dev Returns the largest of two numbers.
-     */
-    function max(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a >= b ? a : b;
-    }
-
-    /**
-     * @dev Returns the smallest of two numbers.
-     */
-    function min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
-    }
-
-    /**
-     * @dev Returns the average of two numbers. The result is rounded towards
-     * zero.
-     */
-    function average(uint256 a, uint256 b) internal pure returns (uint256) {
-        // (a + b) / 2 can overflow, so we distribute
-        return (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
-    }
-}
-
-
 // File @openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol@v3.4.2
 
 // SPDX-License-Identifier: MIT
@@ -548,6 +513,41 @@ abstract contract IRewardDistributionRecipient is OwnableUpgradeable {
         onlyOwner
     {
         rewardDistribution = _rewardDistribution;
+    }
+}
+
+
+// File @openzeppelin/contracts/math/Math.sol@v3.4.2
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity >=0.6.0 <0.8.0;
+
+/**
+ * @dev Standard math utilities missing in the Solidity language.
+ */
+library Math {
+    /**
+     * @dev Returns the largest of two numbers.
+     */
+    function max(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a >= b ? a : b;
+    }
+
+    /**
+     * @dev Returns the smallest of two numbers.
+     */
+    function min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
+    /**
+     * @dev Returns the average of two numbers. The result is rounded towards
+     * zero.
+     */
+    function average(uint256 a, uint256 b) internal pure returns (uint256) {
+        // (a + b) / 2 can overflow, so we distribute
+        return (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
     }
 }
 
@@ -1352,6 +1352,7 @@ pragma solidity ^0.6.2;
 
 
 
+
 interface IERC20Extented is IERC20Upgradeable {
     function decimals() external view returns (uint8);
 }
@@ -1362,6 +1363,8 @@ contract LPTokenWrapper {
 
     // minimal time to be passed from wallet first stake to allow exit
     uint256 public exitTimeOut;
+
+    uint256 public periodStop;
 
     mapping(address => uint256) public exitLimits;
 
@@ -1650,7 +1653,7 @@ contract LPTokenWrapper {
      */
 
     function withdraw() internal virtual {
-        require(block.timestamp >= exitLimits[msg.sender], "withdraw blocked");
+        require(block.timestamp >= farmingStopDate(msg.sender), "withdraw blocked");
         uint256 amount = _balances[msg.sender][stakeToken];
 
         // set balances
@@ -1669,6 +1672,14 @@ contract LPTokenWrapper {
         // reset exit date limits
         exitLimits[msg.sender] = 0;
     }
+
+    function farmingStopDate(address wallet) public view returns (uint256 stopDate) {
+        if (periodStop > 0) {
+            stopDate = Math.min(exitLimits[wallet], periodStop);
+        } else {
+            stopDate = exitLimits[wallet];
+        }
+    }
 }
 
 
@@ -1681,7 +1692,6 @@ pragma solidity ^0.6.2;
 
 
 
-
 contract RewardPoolMulti is LPTokenWrapper, IRewardDistributionRecipient, ReentrancyGuardUpgradeable {
     uint256 public totalStakeLimit; // max value in USD coin (last in route), rememeber decimals!
     address[] public route;
@@ -1690,7 +1700,6 @@ contract RewardPoolMulti is LPTokenWrapper, IRewardDistributionRecipient, Reentr
     uint256 public duration;
 
     uint256 public periodFinish;
-    uint256 public periodStop;
     uint256 public rewardRate;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;

@@ -2,7 +2,6 @@
 
 pragma solidity ^0.6.2;
 
-import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./IRewardDistributionRecipient.sol";
@@ -16,7 +15,6 @@ contract RewardPoolMulti is LPTokenWrapper, IRewardDistributionRecipient, Reentr
     uint256 public duration;
 
     uint256 public periodFinish;
-    uint256 public periodStop;
     uint256 public rewardRate;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;

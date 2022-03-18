@@ -1,13 +1,16 @@
-const { expect, assert } = require("chai");
-const { constants, utils, BigNumber } = require("ethers");
-const { ethers, network } = require("hardhat");
-const { tokens, tokensDec, getBlockTime, timeShift } = require("../utils/utils");
+const { expect } = require("chai");
+const { BigNumber } = require("ethers");
+const { ethers } = require("hardhat");
+const { tokens, tokensDec, timeShiftBy } = require("../utils/utils");
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-
-const FARMING_DURATION = 90 * 24 * 60 * 60;
-const FARMING_EXIT_TIMOUT = 30 * 24 * 60 * 60;
-const ONE_DAY = 1 * 24 * 60 * 60;
+const ONE_TOKEN = tokens(1);
+const MIL_TOKENS = tokens(1_000_000);
+const DAY = 24 * 60 * 60;
+const DAYS_89 = 89 * 24 * 60 * 60;
+const DAYS_90 = 90 * 24 * 60 * 60;
+const DAYS_30 = 30 * 24 * 60 * 60;
+const HOUR = 60 * 60;
 
 describe("Farming", function () {
     let MockLP, esw, usdt, weth, RewardPoolMulti, emiRouter, emiFactory, routes, time;
@@ -162,8 +165,8 @@ describe("Farming", function () {
             owner.address,
             emiFactory.address,
             usdt.address,
-            90 * 24 * 60 * 60,
-            30 * 24 * 60 * 60
+            90 days,
+            30 days
         );
         await RewardPoolMulti.deployed(); */
 
@@ -174,8 +177,8 @@ describe("Farming", function () {
             owner.address,
             emiFactory.address,
             usdt.address,
-            FARMING_DURATION,
-            FARMING_EXIT_TIMOUT,
+            DAYS_90,
+            DAYS_30,
         ]);
         await RewardPoolMulti.deployed();
 
@@ -201,7 +204,7 @@ describe("Farming", function () {
         }
 
         // start farming
-        await esw.transfer(owner.address, tokens(1_000_000));
+        await esw.transfer(owner.address, MIL_TOKENS);
         await esw.connect(owner).approve(RewardPoolMulti.address, tokensDec(1_000_000, 18));
         await RewardPoolMulti.connect(owner).notifyRewardAmount(tokensDec(1_000_000, 18));
     });
@@ -248,8 +251,8 @@ describe("Farming", function () {
 
         // owner send by 1_000_000 to Alice and Bob
 
-        await esw.transfer(Alice.address, tokens(1_000_000));
-        await esw.transfer(Bob.address, tokens(1_000_000));
+        await esw.transfer(Alice.address, MIL_TOKENS);
+        await esw.transfer(Bob.address, MIL_TOKENS);
         await esw.connect(Alice).approve(RewardPoolMulti.address, tokens(100));
         await esw.connect(Bob).approve(RewardPoolMulti.address, tokens(200));
 
@@ -265,11 +268,11 @@ describe("Farming", function () {
 
         // send 10 LP to Alice, 1 LP to Bob
         await wbtc_weth_pool.transfer(Alice.address, tokens("10"));
-        await wbtc_weth_pool.transfer(Bob.address, tokens("1"));
+        await wbtc_weth_pool.transfer(Bob.address, ONE_TOKEN);
 
         // prepare for staking
         await wbtc_weth_pool.connect(Alice).approve(RewardPoolMulti.address, tokens("10"));
-        await wbtc_weth_pool.connect(Bob).approve(RewardPoolMulti.address, tokens("1"));
+        await wbtc_weth_pool.connect(Bob).approve(RewardPoolMulti.address, ONE_TOKEN);
         // prepare for incorrect stake
         await wbtc.transfer(Alice.address, tokensDec("10", 8));
         await wbtc.connect(Alice).approve(RewardPoolMulti.address, tokens("10"));
@@ -328,19 +331,19 @@ describe("Farming", function () {
 
         let resTokenPriceArr = [];
         for (const i of routes.keys()) {
-            resTokenPriceArr.push(await RewardPoolMulti.getAmountOut(tokens("1"), [weth.address].concat(routes[i])));
+            resTokenPriceArr.push(await RewardPoolMulti.getAmountOut(ONE_TOKEN, [weth.address].concat(routes[i])));
         }
 
         // weth.address -> usdt.address is 1999800019
         expect(resTokenPriceArr[0]).to.be.equal(resTokenPrice);
 
         //3999600037 via WBTC
-        expect(await RewardPoolMulti.getLPValueInStable(wbtc_weth_pool.address, tokens("1"))).to.be.equal("3999600037");
+        expect(await RewardPoolMulti.getLPValueInStable(wbtc_weth_pool.address, ONE_TOKEN)).to.be.equal("3999600037");
 
-        let resESW = await RewardPoolMulti.getStakeValuebyLP(wbtc_weth_pool.address, tokens("1"));
+        let resESW = await RewardPoolMulti.getStakeValuebyLP(wbtc_weth_pool.address, ONE_TOKEN);
         let resLP = await RewardPoolMulti.getLPValuebyStake(wbtc_weth_pool.address, resESW);
         // differ between 1LP and reversed LP must be equal or lower than 0.000000000255000256
-        expect(BigNumber.from(tokens("1")).sub(resLP)).to.be.at.most("255000256");
+        expect(BigNumber.from(ONE_TOKEN).sub(resLP)).to.be.at.most("255000256");
 
         // correct stake
         let resESWfor10LP = await RewardPoolMulti.getStakeValuebyLP(wbtc_weth_pool.address, tokens("10"));
@@ -349,17 +352,15 @@ describe("Farming", function () {
         await esw.connect(Alice).approve(RewardPoolMulti.address, resESWfor10LP);
         await RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, tokens(10), resESWfor10LP);
 
-        let resESWfor1LP = await RewardPoolMulti.getStakeValuebyLP(wbtc_weth_pool.address, tokens("1"));
+        let resESWfor1LP = await RewardPoolMulti.getStakeValuebyLP(wbtc_weth_pool.address, ONE_TOKEN);
         await esw.connect(Bob).approve(RewardPoolMulti.address, resESWfor1LP);
         await RewardPoolMulti.connect(Bob).stake(wbtc_weth_pool.address, tokens(1), resESWfor1LP);
 
-        await network.provider.send("evm_increaseTime", [60 * 60]); // 60 secs to pass
-        await network.provider.send("evm_mine");
+        await timeShiftBy(ethers, HOUR); // HOUR to pass
 
         await expect(RewardPoolMulti.connect(Alice).exit()).to.be.revertedWith("withdraw blocked");
 
-        await network.provider.send("evm_increaseTime", [90 * 24 * 60 * 60]); // 30 days to pass
-        await network.provider.send("evm_mine");
+        await timeShiftBy(ethers, DAYS_90); // 90 days to pass
 
         let eswAliceBeforeExit = await esw.balanceOf(Alice.address);
         let eswBobBeforeExit = await esw.balanceOf(Bob.address);
@@ -375,34 +376,7 @@ describe("Farming", function () {
         console.log("ESW on farming", (await esw.balanceOf(RewardPoolMulti.address)).toString());
         console.log("Alice total earned", eswAliceAfterExit.sub(eswAliceBeforeExit).toString());
         console.log("Bob total earned", eswBobAfterExit.sub(eswBobBeforeExit).toString());
-    });
-
-    it("stake minimal values", async () => {
-        // owner send by 1_000_000 to Alice
-        await esw.transfer(Alice.address, tokens(1_000_000));
-        await esw.connect(Alice).approve(RewardPoolMulti.address, tokens(100));
-
-        let pools = await emiRouter.getPoolDataList([wbtc.address, wbtc.address], [uni.address, weth.address]);
-        let wbtc_weth_pool = await lpInstance.attach(pools[1].pool);
-
-        // expect 0.000000001 LP wbtc_weth_pool = 0.000003 USDT
-        expect(await RewardPoolMulti.getLPValueInStable(wbtc_weth_pool.address, "1000000000")).to.be.equal("3");
-
-        // expect 0.0000000001 LP wbtc_weth_pool = 0.000000 USDT
-        expect(await RewardPoolMulti.getLPValueInStable(wbtc_weth_pool.address, "100000000")).to.be.equal("0");
-
-        // prepare wbtc_weth_pool LP for staking
-        await wbtc_weth_pool.transfer(Alice.address, tokens("1"));
-        await wbtc_weth_pool.connect(Alice).approve(RewardPoolMulti.address, tokens("1"));
-
-        // stake 0.000000001 LP wbtc_weth_pool = 0.000003 USDT of LP that greater than 0.000001 USDT
-        await RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "1000000000", tokens(1));
-
-        // stake 0.0000000001 LP wbtc_weth_pool = 0.000000 USDT of LP smaller that smaller than 0.000001 USDT
-        await expect(
-            RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "100000000", tokens(1))
-        ).to.be.revertedWith("not enough stake token amount");
-    });
+    });    
 
     it("stake, earn, stop farming", async () => {
         let pools = await emiRouter.getPoolDataList([wbtc.address, wbtc.address], [uni.address, weth.address]);
@@ -412,15 +386,14 @@ describe("Farming", function () {
         await esw.transfer(Alice.address, tokens(1_000_000));
         await esw.connect(Alice).approve(RewardPoolMulti.address, tokens(100));
         // prepare wbtc_weth_pool LP for staking
-        await wbtc_weth_pool.transfer(Alice.address, tokens("1"));
-        await wbtc_weth_pool.connect(Alice).approve(RewardPoolMulti.address, tokens("1"));
+        await wbtc_weth_pool.transfer(Alice.address, ONE_TOKEN);
+        await wbtc_weth_pool.connect(Alice).approve(RewardPoolMulti.address, ONE_TOKEN);
         await RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "1000000000", tokens(1));
 
         let earned = 0;
 
         for (const i of Array(30).keys()) {
-            time = await getBlockTime(ethers);
-            await timeShift(time + ONE_DAY * 1);
+            await timeShiftBy(ethers, DAY);
 
             // stop farming on some time and remember earnings
             if (i == 15) {
@@ -440,5 +413,65 @@ describe("Farming", function () {
 
         // earned rewards must be equal to earning at stop farming time
         expect(receivedRewards).to.be.equal(earned);
+    });
+
+    describe("stakes withraw cases", async () => {
+        beforeEach("stake prepare", async () => {
+            // owner send by 1_000_000 to Alice
+            await esw.transfer(Alice.address, MIL_TOKENS);
+            await esw.connect(Alice).approve(RewardPoolMulti.address, tokens(100));
+
+            let pools = await emiRouter.getPoolDataList([wbtc.address, wbtc.address], [uni.address, weth.address]);
+            wbtc_weth_pool = await lpInstance.attach(pools[1].pool);
+
+            await wbtc_weth_pool.transfer(Alice.address, ONE_TOKEN);
+            await wbtc_weth_pool.connect(Alice).approve(RewardPoolMulti.address, ONE_TOKEN);
+        });
+        it("stake minimal values", async () => {
+            // expect 0.000000001 LP wbtc_weth_pool = 0.000003 USDT
+            expect(await RewardPoolMulti.getLPValueInStable(wbtc_weth_pool.address, "1000000000")).to.be.equal("3");
+
+            // expect 0.0000000001 LP wbtc_weth_pool = 0.000000 USDT
+            expect(await RewardPoolMulti.getLPValueInStable(wbtc_weth_pool.address, "100000000")).to.be.equal("0");
+
+            // stake 0.000000001 LP wbtc_weth_pool = 0.000003 USDT of LP that greater than 0.000001 USDT
+            await RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "1000000000", ONE_TOKEN);
+
+            // stake 0.0000000001 LP wbtc_weth_pool = 0.000000 USDT of LP smaller that smaller than 0.000001 USDT
+            await expect(
+                RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "100000000", ONE_TOKEN)
+            ).to.be.revertedWith("not enough stake token amount");
+        });
+        it("stake at farming starts and withdraw rewards after stop farming", async () => {
+            // stake
+            await RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "1000000000", ONE_TOKEN);
+            // pass time to the end of farming
+            await timeShiftBy(ethers, DAYS_90);
+
+            // can withdraw
+            let eswBeforeExit = await esw.balanceOf(Alice.address);
+            await RewardPoolMulti.connect(Alice).exit();
+            let eswAfterExit = await esw.balanceOf(Alice.address);
+            expect(eswAfterExit.sub(eswBeforeExit)).to.be.gt(0);
+        });
+
+        it("stake before farming stop and withdraw rewards after stop farming", async () => {
+            // pass time to almost end of farming
+            await timeShiftBy(ethers, DAYS_89);
+            // stake
+            await RewardPoolMulti.connect(Alice).stake(wbtc_weth_pool.address, "1000000000", ONE_TOKEN);
+
+            // can't withdraw before farming stop
+            await expect(RewardPoolMulti.connect(Alice).exit()).to.be.revertedWith("withdraw blocked");
+
+            // pass one day to stop farming and can withdraw
+            await timeShiftBy(ethers, DAY);
+
+            // can withdraw
+            let eswBeforeExit = await esw.balanceOf(Alice.address);
+            await RewardPoolMulti.connect(Alice).exit();
+            let eswAfterExit = await esw.balanceOf(Alice.address);
+            expect(eswAfterExit.sub(eswBeforeExit)).to.be.gt(0);
+        });
     });
 });

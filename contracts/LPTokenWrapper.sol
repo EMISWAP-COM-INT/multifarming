@@ -3,6 +3,7 @@
 pragma solidity ^0.6.2;
 
 //import "hardhat/console.sol";
+import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
@@ -19,6 +20,8 @@ contract LPTokenWrapper {
 
     // minimal time to be passed from wallet first stake to allow exit
     uint256 public exitTimeOut;
+
+    uint256 public periodStop;
 
     mapping(address => uint256) public exitLimits;
 
@@ -307,7 +310,7 @@ contract LPTokenWrapper {
      */
 
     function withdraw() internal virtual {
-        require(block.timestamp >= exitLimits[msg.sender], "withdraw blocked");
+        require(block.timestamp >= farmingStopDate(msg.sender), "withdraw blocked");
         uint256 amount = _balances[msg.sender][stakeToken];
 
         // set balances
@@ -325,5 +328,13 @@ contract LPTokenWrapper {
 
         // reset exit date limits
         exitLimits[msg.sender] = 0;
+    }
+
+    function farmingStopDate(address wallet) public view returns (uint256 stopDate) {
+        if (periodStop > 0) {
+            stopDate = Math.min(exitLimits[wallet], periodStop);
+        } else {
+            stopDate = exitLimits[wallet];
+        }
     }
 }
